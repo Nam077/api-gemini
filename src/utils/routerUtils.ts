@@ -1,8 +1,8 @@
 import { Router, Application } from 'express';
 import { setupAuthRoutes } from '../routes/authRoutes';
 import { setupUserRoutes } from '../routes/userRoutes';
-import { setupConversationRoutes } from '../routes/conversationRoutes';
-import { setupScriptRoutes } from '../routes/scriptRoutes';
+import { setupChatSessionRoutes } from '../routes/chatSessionRoutes';
+import { setupVideoScriptRoutes } from '../routes/videoScriptRoutes';
 
 interface RouteConfig {
   path: string;
@@ -12,9 +12,9 @@ interface RouteConfig {
 export class RouteManager {
   private routes: RouteConfig[] = [
     { path: '/auth', setupFunction: setupAuthRoutes },
-    { path: '', setupFunction: setupUserRoutes }, // Users routes go to base path
-    { path: '', setupFunction: setupConversationRoutes }, // Conversation routes go to base path
-    { path: '', setupFunction: setupScriptRoutes }, // Script routes go to base path
+    { path: '', setupFunction: setupUserRoutes },
+    { path: '/chat', setupFunction: setupChatSessionRoutes },
+    { path: '/video-script', setupFunction: setupVideoScriptRoutes },
   ];
 
   public setupRoutes(app: Application, basePrefix: string = '/api/v1'): void {
