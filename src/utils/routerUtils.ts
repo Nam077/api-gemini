@@ -3,6 +3,7 @@ import { setupAuthRoutes } from '../routes/authRoutes';
 import { setupUserRoutes } from '../routes/userRoutes';
 import { setupChatSessionRoutes } from '../routes/chatSessionRoutes';
 import { setupVideoScriptRoutes } from '../routes/videoScriptRoutes';
+import { setupApiKeyRoutes } from '../routes/apiKeyRoutes';
 
 interface RouteConfig {
   path: string;
@@ -15,6 +16,7 @@ export class RouteManager {
     { path: '', setupFunction: setupUserRoutes },
     { path: '/chat', setupFunction: setupChatSessionRoutes },
     { path: '/video-script', setupFunction: setupVideoScriptRoutes },
+    { path: '', setupFunction: setupApiKeyRoutes },
   ];
 
   public setupRoutes(app: Application, basePrefix: string = '/api/v1'): void {

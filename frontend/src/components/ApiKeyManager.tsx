@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   PlusIcon, 
   TrashIcon, 
@@ -27,6 +27,9 @@ interface ApiKeyStats {
 }
 
 export const ApiKeyManager: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [keys, setKeys] = useState<ApiKeyInfo[]>([]);
   const [stats, setStats] = useState<ApiKeyStats | null>(null);
   const [loading, setLoading] = useState(false);
@@ -36,9 +39,10 @@ export const ApiKeyManager: React.FC = () => {
   const [addingKey, setAddingKey] = useState(false);
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3000/api/v1';
+  const ADMIN_PASSWORD = 'namne123';
 
-  // Fetch API keys and stats
-  const fetchKeys = async () => {
+  // Fetch API keys and stats - using useCallback to prevent infinite loop
+  const fetchKeys = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE}/keys`);
@@ -53,7 +57,79 @@ export const ApiKeyManager: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  }, [API_BASE]);
+
+  // Logout function
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    setPassword('');
+    setKeys([]);
+    setStats(null);
   };
+
+  // useEffect hook - now safe with useCallback
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchKeys();
+    }
+  }, [isAuthenticated, fetchKeys]);
+
+  // Handle password authentication
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === ADMIN_PASSWORD) {
+      setIsAuthenticated(true);
+      setPasswordError('');
+    } else {
+      setPasswordError('Incorrect password. Please try again.');
+      setPassword('');
+    }
+  };
+
+  // Show password protection screen if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="max-w-md w-full mx-4">
+          <div className="card text-center">
+            <div className="mb-6">
+              <FireIcon size={48} className="mx-auto text-blue-600 mb-4" />
+              <h1 className="text-2xl font-bold text-gray-900 mb-2">API Key Management</h1>
+              <p className="text-gray-600">Enter password to access the API key management system</p>
+            </div>
+            
+            <form onSubmit={handlePasswordSubmit} className="space-y-4">
+              <div>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter password"
+                  className="input-field text-center"
+                  autoFocus
+                />
+                {passwordError && (
+                  <p className="text-red-600 text-sm mt-2">{passwordError}</p>
+                )}
+              </div>
+              
+              <button
+                type="submit"
+                disabled={!password.trim()}
+                className="btn-primary w-full"
+              >
+                Access API Key Manager
+              </button>
+            </form>
+            
+            <div className="mt-6 text-xs text-gray-500">
+              🔒 This page is protected to secure your API keys
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Add new API key
   const addApiKey = async () => {
@@ -144,10 +220,6 @@ export const ApiKeyManager: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    fetchKeys();
-  }, []);
-
   const getStatusColor = (key: ApiKeyInfo) => {
     if (!key.isActive || key.errorCount >= 3) return 'text-red-600 bg-red-50';
     if (key.errorCount > 0) return 'text-yellow-600 bg-yellow-50';
@@ -193,6 +265,14 @@ export const ApiKeyManager: React.FC = () => {
           >
             <PlusIcon size={18} />
             Add API Key
+          </button>
+          
+          <button
+            onClick={handleLogout}
+            className="btn-secondary text-red-600 hover:bg-red-50"
+            title="Logout"
+          >
+            🔒 Logout
           </button>
         </div>
       </div>

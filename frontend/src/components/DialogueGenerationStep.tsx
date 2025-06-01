@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState } from 'react';
 import { useVideoScriptGeneration } from '../hooks/useVideoScriptGeneration';
 import type { DialogueSegment } from '../services/api';

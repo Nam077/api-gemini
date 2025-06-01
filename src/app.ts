@@ -91,6 +91,9 @@ export class App {
       this.logger.info(`   - Health check: http://localhost:${port}/health`);
       this.logger.info(`   - Authentication: http://localhost:${port}/api/v1/auth`);
       this.logger.info(`   - Users: http://localhost:${port}/api/v1/users`);
+      this.logger.info(`   - API Keys: http://localhost:${port}/api/v1/keys`);
+      this.logger.info(`   - Chat Sessions: http://localhost:${port}/api/v1/chat`);
+      this.logger.info(`   - Video Scripts: http://localhost:${port}/api/v1/video-script`);
       this.logger.info(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     });
   }
