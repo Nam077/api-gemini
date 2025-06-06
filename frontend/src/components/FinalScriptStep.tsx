@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import copy from 'copy-to-clipboard';
 import { useVideoScriptGeneration } from '../hooks/useVideoScriptGeneration';
 import { 
   PlayIcon, 
@@ -56,11 +57,15 @@ export const FinalScriptStep: React.FC = () => {
 
   const copyToClipboard = async (text: string, key: string) => {
     try {
-      await navigator.clipboard.writeText(text);
-      setCopyStates(prev => ({ ...prev, [key]: true }));
-      setTimeout(() => {
-        setCopyStates(prev => ({ ...prev, [key]: false }));
-      }, 2000);
+      const success = copy(text);
+      if (success) {
+        setCopyStates(prev => ({ ...prev, [key]: true }));
+        setTimeout(() => {
+          setCopyStates(prev => ({ ...prev, [key]: false }));
+        }, 2000);
+      } else {
+        console.error('Failed to copy text');
+      }
     } catch (err) {
       console.error('Failed to copy text: ', err);
     }

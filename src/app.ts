@@ -47,6 +47,8 @@ export class App {
     this.app.use(morgan('combined'));
 
     this.logger.info('Middlewares initialized successfully');
+    // anble cors
+    this.app.use(cors());
   }
 
   private initializeRoutes(): void {
@@ -80,6 +82,7 @@ export class App {
     this.app.use(this.errorMiddleware.handleErrors);
 
     this.logger.info('Error handling initialized successfully');
+
   }
 
   public listen(): void {

@@ -297,7 +297,7 @@ export const DialogueGenerationStep: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, dialogueCount: parseInt(e.target.value) })}
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-colors"
             >
-              {[3, 4, 5, 6, 7, 8, 9, 10].map(num => (
+              {[1,2,3, 4, 5, 6, 7, 8, 9, 10].map(num => (
                 <option key={num} value={num}>
                   {num} segments
                 </option>

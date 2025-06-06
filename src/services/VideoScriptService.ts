@@ -3,6 +3,14 @@ import { injectable, inject } from 'inversify';
 import { ApiKeyService } from './ApiKeyService';
 import { TYPES } from '../types/types';
 
+// Import constants for enhanced lip-sync and rendering optimization
+const LIP_SYNC_OPTIMIZATION = {
+  PHONETIC_TIMING: 'precise',
+  MOUTH_MOVEMENT: 'natural',
+  NO_SUBTITLES: true,
+  SPEECH_CLARITY: 'high'
+} as const;
+
 // Types for Video Script Generation
 interface ContentData {
   contentId: string;
@@ -825,11 +833,17 @@ SPECIAL USER REQUIREMENTS: ${input.dialoguePrompt}
 Please incorporate these specific requirements into the dialogue creation.
 ` : ''}
 
+IMPORTANT DIALOGUE FORMATTING:
+- Dialogue text should contain ONLY actual spoken words
+- Do NOT include action descriptions like "(sighs)", "(whispers)", "(mutters)" in dialogue
+- Put action descriptions in the separate "action" field
+- Keep dialogue clean and speakable
+
 Create detailed dialogue including:
 - Speaking character
-- Dialogue text in ${targetLanguage}
+- Clean dialogue text in ${targetLanguage} (no action descriptions)
 - Emotion/feeling
-- Actions/gestures in ${targetLanguage}
+- Actions/gestures separately in ${targetLanguage}
 - Visual cues (if any) in ${targetLanguage}
 
 ${input.dialoguePrompt ? `Make sure to follow the user's specific requirements: "${input.dialoguePrompt}"` : ''}
@@ -837,27 +851,58 @@ ${input.dialoguePrompt ? `Make sure to follow the user's specific requirements: 
 Ensure dialogue matches each character's personality and fits the ${input.contentData.duration} duration.
 Create ${desiredCount} dialogue segments with natural flow.
 
-IMPORTANT: Respond in JSON array format using ${targetLanguage} language:
+INSTRUCTIONS:
+IMPORTANT: All descriptions, locations, camera work, and instructions must be written in ENGLISH. Only dialogue should remain in the original language. Generate sound descriptions in English that are appropriate for the target language and cultural context.
+
+DIALOGUE FORMATTING RULE: Dialogue should contain ONLY the actual spoken words. Do NOT include action descriptions like "(sighs)", "(whispers)", "(muttering)" in the dialogue text. Put these actions in the Emotion or Sound fields instead.
+
+DIALOGUE CLEANING REQUIREMENT: If any dialogue in the input contains action descriptions in parentheses, remove them and keep only the actual spoken words. Example: "(Thở dài) Hello there" should become "Hello there" in dialogue, and "(Thở dài)" should be added to emotion or sound description.
+
+CRITICAL VIDEO RENDERING REQUIREMENTS:
+- DO NOT render video in English if dialogue is in another language
+- Voice generation MUST match the exact language of each dialogue line
+- Character lip movements MUST sync with the original dialogue language
+- Speech audio MUST be in the same language as written dialogue
+- NEVER translate or convert dialogue to English during video generation
+- Maintain original language pronunciation and accent patterns
+- Audio timing must match the native language rhythm and flow
+
+CRITICAL: The video MUST be rendered in the exact language of the dialogue. Lip-sync and voice generation must match the dialogue language perfectly. This is MANDATORY.
+
+REQUIRED JSON FORMAT: Return a JSON array with exactly this structure (no other fields):
 [
   {
-    "timestamp": "",
-    "characterId": "char_id", 
-    "characterName": "Character name",
-    "dialogue": "Dialogue text in ${targetLanguage}...",
-    "emotion": "happy/confident/excited...",
-    "action": "Action description in ${targetLanguage}...",
-    "visualCue": "Visual hint in ${targetLanguage}..."
+    "timestamp": "00:00",
+    "characterId": "character_id_here",
+    "characterName": "Character Name Here",
+    "dialogue": "Actual spoken words in ${targetLanguage}",
+    "emotion": "character emotion",
+    "action": "character action description in English",
+    "visualCue": "visual scene description in English"
   }
 ]
-`;
+
+DO NOT include sceneNumber, character, or any other fields. Use ONLY the fields shown above.
+Generate ${desiredCount} dialogue segments in this exact JSON format:`;
 
       const result = await this.makeApiCallWithRetry(prompt);
       
-      // Parse AI response
+      // Parse AI response and clean dialogue
       let script: DialogueSegment[];
       try {
         const jsonMatch = result.match(/\[[\s\S]*\]/);
-        script = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+        const rawScript = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
+        
+        // Clean dialogue and ensure correct format
+        script = rawScript.map((segment: any, index: number) => ({
+          timestamp: segment.timestamp || `00:${String(index * 3).padStart(2, '0')}`,
+          characterId: segment.characterId || input.characters[0]?.characterId || `char_${index}`,
+          characterName: segment.characterName || segment.character || input.characters[0]?.name || `Character ${index + 1}`,
+          dialogue: this.cleanDialogue(segment.dialogue || ''),
+          emotion: segment.emotion || 'neutral',
+          action: segment.action || 'speaking',
+          visualCue: segment.visualCue || segment.visualCues || 'natural scene'
+        }));
       } catch {
         // Language-aware fallback script
         if (targetLanguage.toLowerCase().includes('english')) {
@@ -921,7 +966,7 @@ IMPORTANT: Respond in JSON array format using ${targetLanguage} language:
             }
           ];
         } else {
-          // Default Vietnamese
+          // Default Vietnamese with clean dialogue
           script = [
             {
               timestamp: "",
@@ -970,26 +1015,173 @@ IMPORTANT: Respond in JSON array format using ${targetLanguage} language:
     }
   }
 
-  // STEP 4: Generate Simple Final Script
+  // Helper function to clean dialogue text
+  private cleanDialogue(dialogue: string): string {
+    if (!dialogue) return '';
+    
+    // Remove common action descriptions in parentheses
+    return dialogue
+      .replace(/\([^)]*\)/g, '') // Remove anything in parentheses
+      .replace(/\s+/g, ' ') // Replace multiple spaces with single space
+      .trim(); // Remove leading/trailing spaces
+  }
+
+  // STEP 4: Generate Final Script
   async generateFinalScript(input: RegenerateFinalScriptInput): Promise<ApiResponse<FinalScript>> {
     try {
       const scriptId = `script_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
       const targetLanguage = input.language || input.contentData.language || "Vietnamese";
       
-      // Generate Vietnamese prompt first
-      const vietnamesePrompt = this.generateSimplePrompt(input);
+      const prompt = `
+You are an expert video scriptwriter. I will provide you with a JSON input and you need to generate a complete video script following the EXACT template format below.
+
+TEMPLATE FORMAT TO FOLLOW:
+
+Title: [A short, clear title that summarizes the video idea in 5–10 words]
+# Example: NVN Font – The Font that Saves Deadlines
+
+Duration: [Length of the video, in seconds]
+# Example: 8 seconds
+
+Resolution: [Video output resolution]
+# Example: 1080p or 4K
+
+Aspect Ratio: [Standard: 16:9 for YouTube, 9:16 for TikTok/Reels]
+# Example: 16:9
+
+Language: [Spoken language in the video]
+# Example: Vietnamese (natural speech, no subtitles)
+
+Style: [Overall video tone and genre: cinematic, realistic, documentary, funny, stylized...]
+# Example: Cinematic, realistic, professional tone
+
+Tone: [Emotional tone of the video: funny, inspiring, tense, dramatic, heartwarming...]
+# Example: Frustrated → hopeful (emotional arc)
+
+---
+
+IMPORTANT - RENDERING INSTRUCTIONS:
+- Video MUST be rendered in the exact language of all dialogue
+- Lip-sync and voice generation must match dialogue language perfectly
+- Audio and visual elements must be culturally appropriate for the target language
+- NO subtitles, text overlays, or captions should appear in the video
+- Focus on natural lip movements and facial expressions during speech
+
+---
+
+CRITICAL VIDEO RENDERING REQUIREMENTS:
+- DO NOT render video in English if dialogue is in another language
+- Voice generation MUST match the exact language of each dialogue line
+- Character lip movements MUST sync with the original dialogue language PRECISELY
+- Speech audio MUST be in the same language as written dialogue
+- NEVER translate or convert dialogue to English during video generation
+- Maintain original language pronunciation and accent patterns
+- Audio timing must match the native language rhythm and flow
+- Prioritize accurate mouth movement and natural facial expressions
+- NO TEXT ELEMENTS should be rendered on screen during dialogue delivery
+
+---
+
+Scene 1 (start_time–end_time)
+Description:
+- Location: [Where the scene happens; physical or emotional setting]
+- Visual: [What we see; camera focus, characters, objects, space]
+- Character: [Main person in the frame; name, age, looks, outfit, posture]
+- Emotion: [How the character is feeling or reacting]
+- Camera: [Camera framing: close-up, wide, zoom-in, pan, handheld…]
+- Dialogue (Name): [Spoken dialogue in the native language]
+- Sound: [Any audio cues: background music, keyboard clicks, ambient noise, voice tone]
+
+# Example:
+Scene 1 (00:00–00:03)
+Description:
+- Location: A designer's desk at night
+- Visual: Vietnamese text with broken font on a laptop screen; close-up of An typing with a tense face
+- Character: An, 27, messy bun, glasses, casual t-shirt, overwhelmed expression
+- Emotion: Frustrated and anxious
+- Camera: Tilt up from screen to An's face, slightly shaky
+- Dialogue (An): "Trời ơi, font này lại lỗi dấu nữa rồi! Thế này thì sao mà kịp deadline đây?"
+- Sound: Keyboard typing, low tension background score
+
+---
+
+Scene 2 (start_time–end_time)
+# Continue with same format for next scene(s)
+
+---
+
+Scene 3 (start_time–end_time)
+# Last scene — often introduces resolution or twist
+# For product-focused content, this is where the brand shows up
+
+---
+
+Outro (optional)
+Visual: [Logo, text, or slogan on screen]
+Text: [Example: "Việt hóa chuyên nghiệp – tối ưu mọi nền tảng"]
+Sound: [Outro music or signature sound]
+
+---
+
+RENDERING INSTRUCTIONS:
+- Video MUST be rendered in the exact language of all dialogue
+- Lip-sync and voice generation must match dialogue language perfectly
+- Audio and visual elements must be culturally appropriate for the target language
+- NO subtitles or text overlays should appear in the video
+- Focus on precise mouth movement synchronization with spoken words
+- Emphasize natural facial expressions and lip articulation during speech
+
+INSTRUCTIONS:
+IMPORTANT: All descriptions, locations, camera work, and instructions must be written in ENGLISH. Only dialogue should remain in the original language. Generate sound descriptions in English that are appropriate for the target language and cultural context.
+
+DIALOGUE FORMATTING RULE: Dialogue should contain ONLY the actual spoken words. Do NOT include action descriptions like "(sighs)", "(whispers)", "(muttering)" in the dialogue text. Put these actions in the Emotion or Sound fields instead.
+
+DIALOGUE CLEANING REQUIREMENT: If any dialogue in the input contains action descriptions in parentheses, remove them and keep only the actual spoken words. Example: "(Thở dài) Hello there" should become "Hello there" in dialogue, and "(Thở dài)" should be added to emotion or sound description.
+
+CRITICAL VIDEO RENDERING REQUIREMENTS:
+- DO NOT render video in English if dialogue is in another language
+- Voice generation MUST match the exact language of each dialogue line
+- Character lip movements MUST sync with the original dialogue language
+- Speech audio MUST be in the same language as written dialogue
+- NEVER translate or convert dialogue to English during video generation
+- Maintain original language pronunciation and accent patterns
+- Audio timing must match the native language rhythm and flow
+
+CRITICAL: The video MUST be rendered in the exact language of the dialogue. Lip-sync and voice generation must match the dialogue language perfectly. This is MANDATORY.
+
+1. Follow the template format EXACTLY as shown above
+2. Create scenes based on the number of dialogue segments provided
+3. Calculate timing to fit the total duration
+4. Clean all dialogue text to remove action descriptions and keep only spoken words
+5. Create vivid descriptions for all scene elements in English
+6. Return ONLY the completed script text
+
+JSON INPUT DATA:
+${JSON.stringify({
+  contentData: input.contentData,
+  characters: input.characters,
+  dialogue: input.dialogue.map(d => ({
+    ...d,
+    dialogue: this.cleanDialogue(d.dialogue)
+  })),
+  language: targetLanguage
+}, null, 2)}
+
+Generate the complete video script now:`;
+
+      const result = await this.makeApiCallWithRetry(prompt);
       
-      // Translate to English but keep dialogue in Vietnamese
-      const englishPrompt = await this.translateToEnglish(vietnamesePrompt, targetLanguage);
+      // Use the AI response directly
+      const scriptText = result.trim();
 
       const finalScript: FinalScript = {
         scriptId,
         characters: input.characters,
         dialogue: input.dialogue,
-        prompt: englishPrompt,
+        prompt: scriptText,
         metadata: {
           title: `Video Script: ${input.contentData.topic}`,
-          duration: `${input.contentData.duration}`,
+          duration: input.contentData.duration,
           charactersCount: input.characters.length,
           createdAt: new Date()
         }
@@ -1009,135 +1201,6 @@ IMPORTANT: Respond in JSON array format using ${targetLanguage} language:
         error: error?.message || 'Failed to generate final script'
       };
     }
-  }
-
-  // Simple AI translation to English
-  private async translateToEnglish(prompt: string, targetLanguage: string): Promise<string> {
-    const translationPrompt = `Translate this video prompt to English, but keep all dialogue in quotes exactly in ${targetLanguage}:
-
-${prompt}
-
-Rules:
-- Translate descriptions, actions, settings to English
-- Keep ALL dialogue in quotes in ${targetLanguage} (do not translate dialogue)
-- Keep the narrative flow and cinematic style
-- Output clean English prompt without formatting`;
-
-    try {
-      const result = await this.makeApiCallWithRetry(translationPrompt);
-      return result.trim();
-    } catch (error) {
-      // Fallback to original prompt if translation fails
-      console.log('Translation failed, using original prompt');
-      return prompt;
-    }
-  }
-
-  // Create simple, direct prompt in English for AI video tools
-  private generateSimplePrompt(input: RegenerateFinalScriptInput): string {
-    const targetLanguage = input.language || input.contentData.language || "Vietnamese";
-    const duration = input.contentData.duration;
-    const topic = input.contentData.topic;
-    
-    // Generate cinematic narrative prompt
-    const setting = this.generateCinematicSetting(topic, input.contentData.tone);
-    const characters = this.generateCharacterNarrative(input.characters, input.dialogue);
-    const storyFlow = this.generateStoryNarrative(input.dialogue, input.characters, targetLanguage);
-    const technicalSpecs = this.generateTechnicalNarrative(duration, targetLanguage, input.contentData.tone, input.characters, input.dialogue);
-    
-    return `${setting}
-
-${characters}
-
-${storyFlow}
-
-${technicalSpecs}`;
-  }
-
-  // Generate vivid cinematic setting
-  private generateCinematicSetting(topic: string, tone: string): string {
-    const topicLower = topic.toLowerCase();
-    
-    if (topicLower.includes('tech') || topicLower.includes('app') || topicLower.includes('software') || topicLower.includes('ai')) {
-      return "In a modern office space with computers and tech equipment.";
-    } else if (topicLower.includes('business') || topicLower.includes('marketing')) {
-      return "In a professional office environment.";
-    } else if (topicLower.includes('food') || topicLower.includes('recipe')) {
-      return "In a warm kitchen setting.";
-    } else {
-      return "In a comfortable indoor setting with good lighting.";
-    }
-  }
-
-  // Generate character narrative descriptions
-  private generateCharacterNarrative(characters: any[], dialogue: any[]): string {
-    if (characters.length === 1) {
-      const char = characters[0];
-      return `${char.name} (${char.appearance}) appears in the scene.`;
-    } else if (characters.length === 2) {
-      const char1 = characters[0];
-      const char2 = characters[1];
-      return `${char1.name} (${char1.appearance}) and ${char2.name} (${char2.appearance}) are in the scene.`;
-    } else {
-      return characters.map(char => `${char.name} (${char.appearance})`).join(', ') + ' are in the scene.';
-    }
-  }
-
-  // Generate story narrative flow with unique dialogue
-  private generateStoryNarrative(dialogue: any[], characters: any[], language: string): string {
-    let narrative = "";
-    let usedDialogue = new Set(); // Track used dialogue to avoid duplicates
-    
-    dialogue.forEach((segment, index) => {
-      const character = characters.find(c => c.characterId === segment.characterId || c.name === segment.characterName);
-      
-      // Skip if dialogue already used
-      if (usedDialogue.has(segment.dialogue)) {
-        return;
-      }
-      usedDialogue.add(segment.dialogue);
-      
-      if (index === 0) {
-        narrative += `${character?.name || 'The character'} says in ${language}: "${segment.dialogue}"`;
-      } else {
-        narrative += ` Then ${character?.name || 'the other character'} says in ${language}: "${segment.dialogue}"`;
-      }
-    });
-    
-    return narrative;
-  }
-
-  // Generate technical specifications narrative with character roles
-  private generateTechnicalNarrative(duration: string, language: string, tone: string, characters: any[], dialogue: any[]): string {
-    const cameraStyle = tone.includes('hào hứng') || tone.includes('exciting') ? 'dynamic handheld movement' : 'smooth tracking shots';
-    const lightingStyle = tone.includes('chuyên nghiệp') || tone.includes('professional') ? 'professional lighting setup' : 'natural lighting with warm tones';
-    
-    // Determine who speaks and who stays silent
-    let speakingCharacters = new Set();
-    dialogue.forEach(segment => {
-      const character = characters.find(c => c.characterId === segment.characterId || c.name === segment.characterName);
-      if (character) {
-        speakingCharacters.add(character.name);
-      }
-    });
-    
-    let characterInstructions = "";
-    if (characters.length > 1) {
-      const silentCharacters = characters.filter(char => !speakingCharacters.has(char.name));
-      if (silentCharacters.length > 0) {
-        characterInstructions = `\nOnly ${Array.from(speakingCharacters).join(', ')} speak${speakingCharacters.size === 1 ? 's' : ''}. ${silentCharacters.map(char => char.name).join(', ')} remain${silentCharacters.length === 1 ? 's' : ''} silent and just react${silentCharacters.length === 1 ? 's' : ''} naturally.`;
-      }
-    }
-    
-    return `${lightingStyle.charAt(0).toUpperCase() + lightingStyle.slice(1)}, ${cameraStyle}, realistic human expressions and movements. Perfect lip-sync with ${language} speech, no subtitles or text overlays anywhere. 4K cinematic quality with clear audio and natural background ambiance. Duration: ${duration}.
-
-Important Instructions:${characterInstructions}
-No subtitles, captions, or on-screen text in the video.
-Lip-sync must match the ${language} speech perfectly.
-Lighting: ${lightingStyle}
-Style: Realistic human model, cinematic motion, 4K resolution
-Camera: ${cameraStyle === 'dynamic handheld movement' ? 'Handheld camera with dynamic movement and energy' : 'Smooth medium-close tracking shot with light zoom on facial expressions'}
-Audio: Background ambiance only, no music, only speaking character's voice clearly heard.`;
   }
 }
 
